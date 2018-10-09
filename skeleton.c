@@ -54,7 +54,7 @@ MCBSP_Config datainterface_config = {
         MCBSP_FMKS(RCR, RFIG, NO)               |	// Rahmensynchronisationspulse (nach dem ersten Puls)) startet die Übertragung neu
         MCBSP_FMKS(RCR, RDATDLY, 0BIT)          |	// keine Verzögerung (delay) der Daten
         MCBSP_FMKS(RCR, RFRLEN1, OF(1))         |	// Länge der Phase 1 --> 1 Wort
-        MCBSP_FMKS(RCR, RWDLEN1, xxxxx)         |	//
+        MCBSP_FMKS(RCR, RWDLEN1, xxxxx)         |	// SOLLTE 16 sein
         MCBSP_FMKS(RCR, RWDREVRS, DISABLE),		// 32-bit Reversal nicht genutzt
 		/* Sende-Control Register */
         MCBSP_FMKS(XCR, XPHASE, xxxxxx)         |	//
@@ -108,8 +108,8 @@ EDMA_Config configEDMARcv = {
 
     EDMA_FMKS(SRC, SRC, OF(0)),           // Quell-Adresse
 
-    EDMA_FMK (CNT, FRMCNT, NULL)       |  // Anzahl Frames
-    EDMA_FMK (CNT, ELECNT, BUFFER_LEN),   // Anzahl Elemente
+    EDMA_FMK (CNT, FRMCNT, NULL)       |  // Anzahl Frames NULL IST EINS
+    EDMA_FMK (CNT, ELECNT, BUFFER_LEN),   // Anzahl Elemente HIER IST NULL AUCH 0
 
     (Uint32)Buffer_in_ping,       		  // Ziel-Adresse
 
@@ -121,13 +121,10 @@ EDMA_Config configEDMARcv = {
 };
 
 /* Transfer-Complete-Codes for EDMA-Jobs */
-// 4 of em
-int tccRcvPing;
+int tccRcvPing;								// BRAUCHT 4 --> Grafik, muss 3 erstellen
 
 /* EDMA-Handles; are these really all? */
-// we need 3 for the transmit, and 3 for the receive
-// we need both ping and pong in the reload
-EDMA_Handle hEdmaRcv;  
+EDMA_Handle hEdmaRcv;  // Braucht 3 handle für transmit und 3 für recieve. AKtuell, und 2 neue
 EDMA_Handle hEdmaReload; 
 						
 								
@@ -141,29 +138,20 @@ main()
 	CSL_init();  
 	
 	/* Configure McBSP0 and AIC23 */
-	// when we want to parametrize this, we need to parametrize SP0 (for sending out data)
-	// then we need to parametrize the ADC
-	// this function does it
-	Config_DSK6713_AIC23();
+	Config_DSK6713_AIC23(); // Macht irgendwie Seriell port 0 automatisch
 	
-
-	// we read the samples from SP1
-	// we parametrize
 	/* Configure McBSP1*/
 	hMcbsp = MCBSP_open(MCBSP_DEV1, MCBSP_OPEN_RESET);
     MCBSP_config(hMcbsp, &datainterface_config);
     
 	/* configure EDMA */
-    // we now want the EDMA to read the data for us from SP1, so:
     config_EDMA();
 
     /* finally the interrupts */
-    // remember, interrupts need to be enabled
     config_interrupts();
 
-    // we tell him to start, with xxxxxx telling us what to start
-    MCBSP_start(hMcbsp, xxxxxx, 0xffffffff);
-    MCBSP_write(hMcbsp, 0x0); 	/* one shot */
+    MCBSP_start(hMcbsp, xxxxxx, 0xffffffff); //xxxx what to start, recieve, transmit etc
+    MCBSP_write(hMcbsp, 0x0); 	/* one shot */ // HERE THE HARDWARE STARTS
 } /* finished*/
 
 
@@ -175,33 +163,30 @@ void config_EDMA(void)
 	hEdmaReload = EDMA_allocTable(-1);               // Reload-Parameters
 
 
-	configEDMARcv.src = MCBSP_getRcvAddr(hMcbsp);          // delivers the address of the data receive register, which
-														   // we write in the source addr
+	configEDMARcv.src = MCBSP_getRcvAddr(hMcbsp);          //  source addr
 
-	tccRcvPing = EDMA_intAlloc(-1);                        // next available TCC (interrupt)
-	configEDMARcv.opt |= EDMA_FMK(OPT,TCC,tccRcvPing);     // set it
+	tccRcvPing = EDMA_intAlloc(-1);                        // next available TCC TRANSFER COMPLETE
+	configEDMARcv.opt |= EDMA_FMK(OPT,TCC,tccRcvPing);     // set it FIRST IS A ZERO, so nothing changes. The next will be one, so we need to be carefull! 01 and 10 is 11 -> Nach 1 kommt 2. Man muss also erste resetten und auf 0 setzen. And with zero.
 	
 	/* configure */
 	EDMA_config(hEdmaRcv, &configEDMARcv);
-	EDMA_config(hEdmaReload, &configEDMARcv);
+	EDMA_config(hEdmaReload, &configEDMARcv);		// SECOND DATA SECTION, ONLY PONG IS DECLARED. New Adresse and create a new Configureation for pong. Then we have to link them! Link Ponk in ping!
 	/* could we need also some other EDMA read job?*/
-	// we do, we need configs for both ping and pong
-	// so we need an additional config
 
 
 
 	
 	/* link transfers ping -> pong -> ping */
-	EDMA_link(hEdmaRcv,xxxxxxx);  /* is that all? */
-	// 3 calls of this function, and replace xxxxxx with corresponding handles
+	EDMA_link(hEdmaRcv,xxxxxxx);  /* is that all? */ 	// HERE WE SWAP PING TO PONK SIND 3 CALLS!
 
 
 	/* do you want to hear music? */
 
+	// SOURCE UND ALLES NOCHMAL DAS MANN WAS HÖRT. UNGEFÄHR 15 zeilen, wie direkt oben dran.
 
 	/* enable EDMA TCC */
 	EDMA_intClear(tccRcvPing);
-	EDMA_intEnable(tccRcvPing); // we do this for all 4 channels (setting the Tc INTERRUPT)
+	EDMA_intEnable(tccRcvPing);
 	/* some more? */
 
 	/* which EDMAs do we have to enable? */
@@ -211,16 +196,16 @@ void config_EDMA(void)
 
 void config_interrupts(void)
 {
-	IRQ_map(IRQ_EVT_xxxx, 123456); // we map events (which int to which int number)
+	IRQ_map(IRQ_EVT_xxxx, 123456);
 	IRQ_clear(xxxxx);
 	IRQ_enable(xxxxx);
 	IRQ_globalEnable();
 }
-// on our board, the ADC and DAC are on the same chip, and share the clock (there is only one clock and they both follow it)
 
-void EDMA_interrupt_service(void)
-{
-	xxx int rcvPingDone=0; // replace with static to keep em from one function to the other
+
+void EDMA_interrupt_service(void)	// WE GET 2 INTERRUPT, from recieve and transmit! AD AND DA get the same clock, They are on the same Building! THE SAME CLOCK!!
+{									// PERFEKT SYNCHRONISIERT, MÜSSEN ALSO NUR AUF einen CLOCK REAGIEREN! KANN ALSO BEI CLK DIREKT BEIDE BEARBEITEN. PROCESS THE DATA IST BOTH ARE FINISHED
+	xxx int rcvPingDone=0;			// REPLACE xxx with static! SO they are global!
 	xxx int rcvPongDone=0;
 	xxx int xmtPingDone=0;
 	xxx int xmtPongDone=0;
@@ -229,28 +214,28 @@ void EDMA_interrupt_service(void)
 		EDMA_intClear(tccRcvPing); /* clear is mandatory */
 		rcvPingDone=1;
 	}
-	else if(xxxxxxxxx) {
+	else if(xxxxxxxxx) {				// IF RECIEVE PONG?
 		EDMA_intClear(yyyyyyyyyy);
 		rcvPongDone=1;
 	}
 	
-	........... // we do the same for transmit
+	...........					// NOW FOR TRANSMIT 2 times! So we have 4 times
 	
 	if(rcvPingDone && xmtPingDone) {
 		rcvPingDone=0;
 		xmtPingDone=0;
 		// processing in SWI
-		SWI_post(&SWI_process_ping);  // if it checks, ping buffers are filled, so we use the SWI for ping
+		SWI_post(&SWI_process_ping);
 	}
 	else if(rcvPongDone && xmtPongDone) {
 		rcvPongDone=0;
 		xmtPongDone=0;
 		// processing in SWI
-		SWI_post(&SWI_process_pong);  // same shit for pong
+		SWI_post(&SWI_process_pong);
 	}
 }
 
-void process_ping_SWI(void)
+void process_ping_SWI(void)		// THIS IS THE GOLDEN WIRE, IT COPIES! HERE COMES THE COMPLEX ALGORITHM
 {
 	int i;
 	for(i=0; i<BUFFER_LEN; i++)
@@ -261,26 +246,22 @@ void process_pong_SWI(void)
 {
 	int i;
 	for(i=0; i<BUFFER_LEN; i++)
-		*(Buffer_out_pong+i) = *(Buffer_in_pong+i); // GOLDEN WIRE
-													// just copying the data from IN to OUT, to check if stuff works
-	// THIS IS WHERE WE MIGHT ADD AMPLIFICATION, FOR THE DATA AT THE OUTPUT (ex: 2*)
+		*(Buffer_out_pong+i) = *(Buffer_in_pong+i); 
 }
 
-
-// THat's it, what's below is experimentation with tasks
-void SWI_LEDToggle(void)
+void SWI_LEDToggle(void)		// DIE BEIDEN UNTEN SIND UNTERPROGRAMME
 {
 	SEM_postBinary(&SEM_LEDToggle);	
 }
 
-void tsk_led_toggle(void)
+void tsk_led_toggle(void)				// KLEINES TOGGLE PROGRAMM
 {
 	/* initializatoin of the task */
 	/* nothing to do */
 	
 	/* process */
 	while(1) {
-		SEM_pendBinary(&SEM_LEDToggle, SYS_FOREVER); // calls LEDToggle, changes the LED, then goes back to sleep on the semaphore
+		SEM_pendBinary(&SEM_LEDToggle, SYS_FOREVER);
 		
 		DSK6713_LED_toggle(1);
 	}
