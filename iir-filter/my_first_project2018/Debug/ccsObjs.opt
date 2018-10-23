@@ -1,0 +1,1 @@
+-l"./my_first_project2018cfg.cmd" "./my_first_project2018cfg_c.obj" "./my_first_project2018cfg.obj" "./main.obj" -l"libc.a" -l"C:\ti\C6xCSL\lib_3x\csl6713.lib" -l"C:\ti\DSK6713\c6000\dsk6713\lib\dsk6713bsl.lib" 
